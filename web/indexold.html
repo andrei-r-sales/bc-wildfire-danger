@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BC Wildfire Risk — Latest</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    body { margin: 0; font-family: system-ui, sans-serif; }
+    #map { height: 100vh; width: 100%; }
+    .panel {
+      position: absolute; z-index: 1000; top: 12px; left: 12px;
+      background: rgba(255,255,255,0.92); padding: 10px 14px;
+      border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.3); font-size: 14px;
+    }
+    .legend span { display: inline-block; width: 12px; height: 12px; margin-right: 4px; border-radius: 2px; }
+    .legend div { margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div class="panel legend">
+    <strong>BC Wildfire Risk</strong>
+    <div id="asof">Loading…</div>
+    <div><span style="background:#0001fe"></span>Low</div>
+    <div><span style="background:#00e001"></span>Moderate</div>
+    <div><span style="background:#ffff00"></span>High</div>
+    <div><span style="background:#e29f01"></span>Very High</div>
+    <div><span style="background:#fe0000"></span>Extreme</div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const COLORS = ["#0001fe", "#00e001", "#ffff00", "#e29f01", "#fe0000"];
+    const map = L.map("map").setView([54.5, -125], 5);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap", maxZoom: 12
+    }).addTo(map);
+
+    fetch("data/latest.geojson")
+      .then(r => r.json())
+      .then(gj => {
+        document.getElementById("asof").textContent = "As of " + (gj.date || "latest");
+        L.geoJSON(gj, {
+          pointToLayer: (f, latlng) => L.circleMarker(latlng, {
+            radius: 5, weight: 0, fillOpacity: 0.75,
+            fillColor: COLORS[(f.properties.risk || 1) - 1]
+          }).bindPopup(f.properties.label + " (" + f.properties.risk + "/5)")
+        }).addTo(map);
+      })
+      .catch(() => document.getElementById("asof").textContent = "No data yet.");
+  </script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+name: daily-wildfire-prediction
+
+# Runs every day at 14:00 UTC (~6-7am Pacific) and on manual trigger.
+on:
+  schedule:
+    - cron: "0 14 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write   # allow the job to commit the new map back to the repo
+
+jobs:
+  predict:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # rf_model.pkl must be in the repo (use Git LFS if it is large, or
+      # download it from a release / object store in a step here instead).
+      - name: Generate today's prediction
+        run: |
+          python daily_extract.py --step 0.5 --mask BC_mask.geojson --out predictions
+
+      - name: Publish latest map to docs/ (served by GitHub Pages)
+        run: |
+          mkdir -p docs/data
+          DATE=$(date -u +%F)
+          cp "predictions/geojson/${DATE}.geojson" docs/data/latest.geojson
+          cp "predictions/pngs/${DATE}.png"        docs/data/latest.png || true
+          cp web/index.html docs/index.html
+
+      - name: Commit and push
+        run: |
+          git config user.name  "wildfire-bot"
+          git config user.email "wildfire-bot@users.noreply.github.com"
+          git add docs predictions
+          git commit -m "Daily prediction $(date -u +%F)" || echo "no changes"
+          git push

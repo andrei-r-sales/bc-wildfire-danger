@@ -1,0 +1,32 @@
+# ── Models & data (model is 224 MB — exceeds GitHub's 100 MB hard limit; it lives in S3)
+*.pkl
+*.joblib
+data/
+*.csv
+*.parquet
+*.nc
+*.grib
+*.geojson        # daily prediction outputs live in S3, not the repo — remove this line if you keep a small static grid file in the repo
+
+# ── Credentials — never commit these
+.env
+*.pem
+.aws/
+credentials*
+
+# ── Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# ── OS / editor
+.DS_Store
+.vscode/
+
+# ── Logs & scratch
+*.log
+
+# NOTE: do NOT ignore *.html here — your Leaflet frontend index.html is source code.
+predictions/

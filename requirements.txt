@@ -1,0 +1,12 @@
+pandas
+numpy
+requests
+scikit-learn==1.6.1
+joblib
+matplotlib
+# optional, only needed for --mask BC clipping:
+# geopandas
+# shapely
+# only needed to rebuild the satellite cache from GeoTIFFs:
+# rasterio
+

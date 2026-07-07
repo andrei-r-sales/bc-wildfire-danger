@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BC Wildfire Risk</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    :root { --ink:#1a1a1a; --panel:rgba(255,255,255,0.96); }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui, -apple-system, sans-serif; color:var(--ink); }
+    #map { height:100vh; width:100%; background:#aadaff; }
+
+    .header {
+      position:absolute; z-index:1000; top:0; left:0; right:0;
+      background:linear-gradient(180deg, rgba(0,0,0,0.55), rgba(0,0,0,0));
+      color:#fff; padding:14px 18px 30px; pointer-events:none;
+    }
+    .header h1 { margin:0; font-size:20px; font-weight:700; letter-spacing:0.2px; text-shadow:0 1px 3px rgba(0,0,0,0.5); }
+    .header p { margin:2px 0 0; font-size:13px; opacity:0.95; text-shadow:0 1px 2px rgba(0,0,0,0.5); }
+    .about-btn {
+      position:absolute; top:14px; right:14px; z-index:1001; pointer-events:auto;
+      background:rgba(255,255,255,0.92); border:0; border-radius:18px; padding:6px 13px;
+      font-size:13px; font-weight:600; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,0.3);
+    }
+
+    .controls {
+      position:absolute; z-index:1000; top:64px; left:12px;
+      background:var(--panel); border-radius:10px; padding:12px;
+      box-shadow:0 2px 8px rgba(0,0,0,0.25); width:252px; max-width:calc(100vw - 24px);
+    }
+    .controls label { font-size:12px; font-weight:600; display:block; margin-bottom:4px; }
+    .search-row { display:flex; gap:6px; }
+    .search-row input { flex:1; padding:7px 9px; border:1px solid #ccc; border-radius:6px; font-size:13px; min-width:0; }
+    .search-row button { padding:7px 11px; border:0; border-radius:6px; background:#c01616; color:#fff; font-size:13px; font-weight:600; cursor:pointer; }
+    .search-row button:hover { background:#a01212; }
+    #result { font-size:13px; margin-top:9px; line-height:1.4; }
+    .caveat { font-size:11.5px; color:#8a4b00; background:#fff4e0; border-radius:6px; padding:7px 8px; margin-top:7px; line-height:1.35; }
+    .caveat a { color:#8a4b00; }
+    .trend-wrap { margin-top:9px; }
+    .trend-title { font-size:11.5px; color:#444; margin-bottom:3px; }
+    .trend-none { font-size:11.5px; color:#888; font-style:italic; }
+
+    .legend {
+      position:absolute; z-index:1000; bottom:18px; left:12px;
+      background:var(--panel); border-radius:10px; padding:10px 12px;
+      box-shadow:0 2px 8px rgba(0,0,0,0.25); font-size:13px; max-width:calc(100vw - 24px);
+    }
+    .legend .title { font-weight:700; margin-bottom:2px; }
+    .legend .hint { font-size:10.5px; color:#888; margin-bottom:6px; }
+    .legend .row { display:flex; align-items:center; margin-top:3px; cursor:pointer; user-select:none; padding:1px 3px; border-radius:4px; }
+    .legend .row:hover { background:rgba(0,0,0,0.05); }
+    .legend .row.off { opacity:0.4; text-decoration:line-through; }
+    .swatch { display:inline-block; width:14px; height:14px; margin-right:7px; border-radius:3px; flex:none; }
+    .legend .coastnote { font-size:10.5px; color:#666; margin-top:7px; max-width:190px; line-height:1.3; }
+    #asof { font-size:12px; opacity:0.85; margin-top:7px; }
+
+    .about-overlay {
+      position:absolute; inset:0; z-index:2000; background:rgba(0,0,0,0.45);
+      display:none; align-items:center; justify-content:center; padding:18px;
+    }
+    .about-overlay.open { display:flex; }
+    .about-card {
+      background:#fff; border-radius:12px; max-width:460px; width:100%;
+      max-height:85vh; overflow:auto; padding:22px 24px; box-shadow:0 8px 30px rgba(0,0,0,0.3);
+    }
+    .about-card h2 { margin:0 0 10px; font-size:19px; }
+    .about-card h3 { margin:16px 0 5px; font-size:13px; text-transform:uppercase; letter-spacing:0.4px; color:#666; }
+    .about-card p, .about-card li { font-size:13.5px; line-height:1.5; }
+    .about-card ul { margin:5px 0; padding-left:18px; }
+    .about-card .close { float:right; border:0; background:#eee; border-radius:16px; padding:5px 12px; cursor:pointer; font-weight:600; }
+    .about-card a { color:#c01616; }
+    @media (max-width: 560px) {
+      .header h1 { font-size:16px; }
+      .header p { font-size:11px; }
+      .about-btn { top:10px; right:10px; padding:5px 10px; font-size:12px; }
+      .controls { top:54px; left:8px; right:8px; width:auto; padding:10px; }
+      .legend { bottom:10px; left:8px; padding:8px 10px; font-size:12px; max-width:46vw; }
+      .legend .coastnote { max-width:none; }
+      /* keep the bottom-right zoom clear of the legend on phones */
+      .leaflet-bottom.leaflet-right { margin-bottom:4px; }
+      .about-card { padding:18px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>British Columbia Wildfire Risk</h1>
+    <p>Daily fire-danger forecast across BC</p>
+  </div>
+  <button class="about-btn" id="aboutBtn">&#9432; About</button>
+
+  <div class="controls">
+    <label for="city">Check your city</label>
+    <div class="search-row">
+      <input id="city" placeholder="e.g. Kelowna" autocomplete="off" />
+      <button id="searchBtn">Go</button>
+    </div>
+    <div id="result"></div>
+  </div>
+
+  <div class="legend">
+    <div class="title">Fire danger</div>
+    <div class="hint">Tap a level to filter the map</div>
+    <div class="row" data-level="1"><span class="swatch" style="background:#0001fe"></span>Low</div>
+    <div class="row" data-level="2"><span class="swatch" style="background:#00e001"></span>Moderate</div>
+    <div class="row" data-level="3"><span class="swatch" style="background:#ffff00"></span>High</div>
+    <div class="row" data-level="4"><span class="swatch" style="background:#e29f01"></span>Very High</div>
+    <div class="row" data-level="5"><span class="swatch" style="background:#fe0000"></span>Extreme</div>
+    <div class="coastnote">Dashed area = lower-confidence coastal zone (sparse data; runs slightly high).</div>
+    <div id="asof">Loading&hellip;</div>
+  </div>
+
+  <div class="about-overlay" id="aboutOverlay">
+    <div class="about-card">
+      <button class="close" id="aboutClose">Close</button>
+      <h2>About this map</h2>
+      <p>A machine-learning <b>estimate</b> of daily wildfire danger (1&ndash;5) across British Columbia. It is <b>not</b> an official rating.</p>
+
+      <h3>How it works</h3>
+      <p>A random-forest model trained on ~560,000 station-days of historical BC Wildfire Service danger ratings, using live weather (Open-Meteo), satellite vegetation &amp; moisture (NASA MODIS), and terrain. It regenerates automatically every morning.</p>
+
+      <h3>How accurate is it?</h3>
+      <p>Measured honestly on 2024&ndash;2025 data the model never trained on: about <b>55% exact</b> and <b>95% within one level</b> (quadratic-weighted &kappa; 0.77). Validated against the official rating, it runs only mildly high overall (+0.16 levels) and preserves the correct ordering of risk.</p>
+
+      <h3>Known limits</h3>
+      <ul>
+        <li>Coarse ~30&nbsp;km grid &mdash; treat cells as regional, not street-level.</li>
+        <li>Coastal &amp; urban areas (dashed zone) have sparse training data and run ~0.35 levels high &mdash; least reliable there.</li>
+      </ul>
+
+      <h3>For real decisions</h3>
+      <p>Always defer to the official <a href="https://wildfiresituation.nrs.gov.bc.ca/map" target="_blank" rel="noopener">BC Wildfire Service</a> rating.</p>
+    </div>
+  </div>
+
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const COLORS = ["#0001fe", "#00e001", "#ffff00", "#e29f01", "#fe0000"];
+    let FEATURES = [], DATE = null, searchMarker = null;
+    const cellLayers = { 1:L.layerGroup(), 2:L.layerGroup(), 3:L.layerGroup(), 4:L.layerGroup(), 5:L.layerGroup() };
+    const active = new Set([1,2,3,4,5]);
+
+    const map = L.map("map", { maxZoom: 9, zoomControl: false }).setView([54.5, -125], 5);
+    L.control.zoom({ position: "bottomright" }).addTo(map);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap | model estimate, not official", maxZoom: 9
+    }).addTo(map);
+
+    // lower-confidence coastal zone (matches the +0.35-level bias we measured there)
+    L.rectangle([[48.3, -125.6], [49.6, -121.7]], {
+      color: "#444", weight: 1.5, dashArray: "6,5", fill: true,
+      fillColor: "#777", fillOpacity: 0.10, interactive: false
+    }).addTo(map);
+
+    function inferStep(features) {
+      const lats = [...new Set(features.map(f => f.geometry.coordinates[1]))].sort((a, b) => a - b);
+      let step = 0.5;
+      for (let i = 1; i < lats.length; i++) {
+        const d = +(lats[i] - lats[i - 1]).toFixed(4);
+        if (d > 0) step = Math.min(step, d);
+      }
+      return step;
+    }
+
+    function cellPopup(p, lat, lon) {
+      let why = "";
+      if (p.rain14_mm !== undefined) {
+        const dry = p.rain14_mm < 5 ? "very dry" : p.rain14_mm < 20 ? "fairly dry" : "some recent rain";
+        const hot = p.maxtemp_c >= 28 ? "hot" : p.maxtemp_c >= 18 ? "mild" : "cool";
+        why = `<hr style="border:none;border-top:1px solid #eee;margin:6px 0">` +
+          `<div style="font-size:12px">Last 14 days rain: <b>${p.rain14_mm} mm</b> (${dry})<br>` +
+          `Max temp: <b>${p.maxtemp_c}&deg;C</b> (${hot})<br>` +
+          `Max wind: <b>${p.wind_ms} m/s</b></div>` +
+          `<div style="font-size:10.5px;color:#888;margin-top:5px">What the model is seeing here.</div>`;
+      }
+      return `<b>${p.label}</b> (${p.risk}/5)<br><span style="font-size:11px;color:#888">` +
+        `${lat.toFixed(2)}, ${lon.toFixed(2)}</span>${why}`;
+    }
+
+    function drawCells(features) {
+      const half = inferStep(features) / 2;
+      Object.values(cellLayers).forEach(g => g.clearLayers());
+      features.forEach(f => {
+        const [lon, lat] = f.geometry.coordinates;
+        const risk = f.properties.risk || 1;
+        L.rectangle([[lat - half, lon - half], [lat + half, lon + half]], {
+          stroke: true, color: "#ffffff", weight: 0.5, opacity: 0.25,
+          fillColor: COLORS[risk - 1], fillOpacity: 0.6
+        }).bindPopup(cellPopup(f.properties, lat, lon))
+          .addTo(cellLayers[risk]);
+      });
+      renderActive();
+    }
+
+    function renderActive() {
+      for (let r = 1; r <= 5; r++) {
+        if (active.has(r)) cellLayers[r].addTo(map);
+        else map.removeLayer(cellLayers[r]);
+      }
+    }
+
+    function nearestIn(features, lat, lon) {
+      let best = null, bestD = Infinity;
+      for (const f of features) {
+        const [flon, flat] = f.geometry.coordinates;
+        const d = (flat - lat) ** 2 + (flon - lon) ** 2;
+        if (d < bestD) { bestD = d; best = f; }
+      }
+      return { feature: best, dist: Math.sqrt(bestD) };
+    }
+
+    function inLowConfidenceZone(lat, lon) {
+      return lat >= 48.3 && lat <= 49.6 && lon >= -125.6 && lon <= -121.7;
+    }
+
+    async function fetchDay(dateStr) {
+      try {
+        const r = await fetch(`/wildfire/predictions/geojson/${dateStr}.geojson`);
+        if (!r.ok) return null;
+        const gj = await r.json();
+        return gj && gj.features ? gj.features : null;
+      } catch (e) { return null; }
+    }
+
+    async function showTrend(lat, lon, box) {
+      if (!DATE) { box.innerHTML = ""; return; }
+      box.innerHTML = '<div class="trend-none">Loading trend&hellip;</div>';
+      const anchor = new Date(DATE + "T00:00:00");
+      const series = [];
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(anchor); d.setDate(anchor.getDate() - i);
+        const ds = d.toISOString().slice(0, 10);
+        const feats = (ds === DATE) ? FEATURES : await fetchDay(ds);
+        if (!feats) continue;
+        const f = nearestIn(feats, lat, lon).feature;
+        if (f) series.push({ date: ds, risk: f.properties.risk });
+      }
+      if (series.length < 2) {
+        box.innerHTML = '<div class="trend-none">Not enough history yet for a trend.</div>';
+        return;
+      }
+      const w = 16, gap = 4, h = 32;
+      let svg = `<svg width="${series.length * (w + gap)}" height="${h}">`;
+      series.forEach((s, i) => {
+        const bh = (s.risk / 5) * h;
+        svg += `<rect x="${i * (w + gap)}" y="${h - bh}" width="${w}" height="${bh}" rx="2" fill="${COLORS[s.risk - 1]}"/>`;
+      });
+      svg += "</svg>";
+      const first = series[0].risk, last = series[series.length - 1].risk;
+      const dir = last > first ? "&#8593; rising" : last < first ? "&#8595; falling" : "&#8594; steady";
+      box.innerHTML = `<div class="trend-title">Recent trend (${series.length} days): <b>${dir}</b></div>${svg}`;
+    }
+
+    async function searchCity() {
+      const q = document.getElementById("city").value.trim();
+      const out = document.getElementById("result");
+      if (!q) return;
+      out.textContent = "Searching\u2026";
+      try {
+        const url = "https://geocoding-api.open-meteo.com/v1/search?name=" +
+          encodeURIComponent(q) + "&count=10&language=en&format=json";
+        const geo = await fetch(url).then(r => r.json());
+        if (!geo.results || !geo.results.length) { out.textContent = "City not found."; return; }
+        const hit = geo.results.find(r => r.admin1 && r.admin1.includes("British Columbia")) || geo.results[0];
+        const lat = hit.latitude, lon = hit.longitude;
+        const { feature, dist } = nearestIn(FEATURES, lat, lon);
+        if (!feature || dist > 1.0) { out.textContent = `${hit.name} is outside the BC coverage area.`; return; }
+        const risk = feature.properties.risk, label = feature.properties.label;
+        map.setView([lat, lon], 7);
+        if (searchMarker) map.removeLayer(searchMarker);
+        searchMarker = L.marker([lat, lon]).addTo(map)
+          .bindPopup(`<b>${hit.name}</b><br>${label} (${risk}/5)`).openPopup();
+        let html = `<span class="swatch" style="background:${COLORS[risk - 1]}"></span>` +
+          `<b>${hit.name}${hit.admin1 ? ", " + hit.admin1 : ""}</b>: ${label} (${risk}/5)`;
+        if (inLowConfidenceZone(lat, lon)) {
+          html += `<div class="caveat">&#9888; Coastal &amp; urban areas like Metro Vancouver have few ` +
+            `nearby weather stations, so ratings here are less reliable. For decisions, check the official ` +
+            `<a href="https://wildfiresituation.nrs.gov.bc.ca/map" target="_blank" rel="noopener">BC Wildfire Service</a> rating.</div>`;
+        }
+        html += `<div class="trend-wrap" id="trendBox"></div>`;
+        out.innerHTML = html;
+        showTrend(lat, lon, document.getElementById("trendBox"));
+      } catch (e) {
+        out.textContent = "Lookup failed \u2014 try again.";
+      }
+    }
+
+    // legend filter
+    document.querySelectorAll(".legend .row").forEach(row => {
+      row.addEventListener("click", () => {
+        const lvl = +row.dataset.level;
+        if (active.has(lvl)) { active.delete(lvl); row.classList.add("off"); }
+        else { active.add(lvl); row.classList.remove("off"); }
+        renderActive();
+      });
+    });
+
+    // about panel
+    const overlay = document.getElementById("aboutOverlay");
+    document.getElementById("aboutBtn").addEventListener("click", () => overlay.classList.add("open"));
+    document.getElementById("aboutClose").addEventListener("click", () => overlay.classList.remove("open"));
+    overlay.addEventListener("click", e => { if (e.target === overlay) overlay.classList.remove("open"); });
+
+    document.getElementById("searchBtn").addEventListener("click", searchCity);
+    document.getElementById("city").addEventListener("keydown", e => { if (e.key === "Enter") searchCity(); });
+
+    fetch("/wildfire/predictions/latest.geojson")
+      .then(r => r.json())
+      .then(gj => {
+        FEATURES = gj.features; DATE = gj.date || null;
+        document.getElementById("asof").textContent = DATE ? ("Updated " + DATE) : "Latest";
+        drawCells(FEATURES);
+      })
+      .catch(() => { document.getElementById("asof").textContent = "No data yet."; });
+  </script>
+</body>
+</html>

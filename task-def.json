@@ -1,0 +1,35 @@
+{
+  "family": "wildfire-daily",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048",
+  "runtimePlatform": {
+    "cpuArchitecture": "X86_64",
+    "operatingSystemFamily": "LINUX"
+  },
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/wildfireExecutionRole",
+  "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/wildfireTaskRole",
+  "containerDefinitions": [
+    {
+      "name": "wildfire-daily",
+      "image": "ACCOUNT_ID.dkr.ecr.ca-central-1.amazonaws.com/wildfire-daily:latest",
+      "essential": true,
+      "command": ["--grid-file", "bc_grid.csv"],
+      "environment": [
+        {"name": "STORAGE_BACKEND", "value": "s3"},
+        {"name": "S3_BUCKET", "value": "andrei-wildfire-964845"},
+        {"name": "S3_PREFIX", "value": "wildfire"},
+        {"name": "AWS_DEFAULT_REGION", "value": "ca-central-1"}
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/wildfire-daily",
+          "awslogs-region": "ca-central-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}
