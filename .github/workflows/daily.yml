@@ -1,0 +1,92 @@
+name: daily-wildfire-prediction
+# Runs every day at 14:00 UTC (~6-7am Pacific) and on manual trigger.
+on:
+  schedule:
+    - cron: "0 14 * * *"
+  workflow_dispatch:
+permissions:
+  contents: write   # allow the job to commit the new map back to the repo
+jobs:
+  predict:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Playwright
+        run: |
+          pip install playwright
+          playwright install chromium --with-deps
+
+      - name: Generate today's prediction
+        run: |
+          python daily_extract.py --step 0.5 --mask BC_mask.geojson --out predictions
+
+      - name: Publish latest map to docs/ (served by GitHub Pages)
+        run: |
+          mkdir -p docs/data
+          DATE=$(date -u +%F)
+          cp "predictions/geojson/${DATE}.geojson" docs/data/latest.geojson
+          cp "predictions/pngs/${DATE}.png"        docs/data/latest.png || true
+          cp web/index.html                        docs/index.html
+
+      - name: Screenshot live Leaflet map
+        run: |
+          python3 - <<'EOF'
+          from playwright.sync_api import sync_playwright
+
+          with sync_playwright() as p:
+              browser = p.chromium.launch()
+              page = browser.new_page(viewport={"width": 1280, "height": 720})
+              page.goto("https://dyzubavibswsp.cloudfront.net/index.html")
+              # wait for tiles + prediction layer to fully render
+              page.wait_for_timeout(6000)
+              page.screenshot(path="docs/data/latest.png")
+              browser.close()
+
+          print("Leaflet map screenshot saved to docs/data/latest.png")
+          EOF
+
+      - name: Commit and push
+        run: |
+          git config user.name  "wildfire-bot"
+          git config user.email "wildfire-bot@users.noreply.github.com"
+          git add docs predictions
+          git commit -m "Daily prediction $(date -u +%F)" || echo "no changes"
+          git push
+
+      - name: Push snapshot to portfolio repo
+        env:
+          PORTFOLIO_TOKEN: ${{ secrets.PORTFOLIO_TOKEN }}
+        run: |
+          PNG="docs/data/latest.png"
+
+          # encode as base64
+          CONTENT=$(base64 -w 0 "$PNG")
+
+          # get current file SHA (needed to update an existing file via API)
+          SHA=$(curl -s \
+            -H "Authorization: token $PORTFOLIO_TOKEN" \
+            "https://api.github.com/repos/andrei-r-sales/andrei-r-sales.github.io/contents/assets/wildfire-snapshot.png" \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('sha',''))" 2>/dev/null || echo "")
+
+          # build JSON body
+          if [ -n "$SHA" ]; then
+            BODY=$(python3 -c "import json; print(json.dumps({'message':'Update wildfire snapshot','content':'$CONTENT','sha':'$SHA'}))")
+          else
+            BODY=$(python3 -c "import json; print(json.dumps({'message':'Add wildfire snapshot','content':'$CONTENT'}))")
+          fi
+
+          # push to portfolio repo
+          curl -s -X PUT \
+            -H "Authorization: token $PORTFOLIO_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$BODY" \
+            "https://api.github.com/repos/andrei-r-sales/andrei-r-sales.github.io/contents/assets/wildfire-snapshot.png"
+
+          echo "Snapshot pushed to portfolio repo"
