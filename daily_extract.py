@@ -137,8 +137,19 @@ def get_with_retry(url, params, max_retries=6, label="request"):
     Honors a Retry-After header if the server sends one, else backs off
     5/10/20/40/80/160 seconds. Raises after max_retries straight 429s.
     """
+    last_error = None
     for attempt in range(max_retries):
-        resp = requests.get(url, params=params, timeout=60)
+        try:
+            resp = requests.get(url, params=params, timeout=60)
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            last_error = e
+            if attempt == max_retries - 1:
+                break
+            wait = (2 ** attempt) * 5
+            print(f"  transient network error on {label}: {e}; waiting {wait:.0f}s "
+                  f"(attempt {attempt + 1}/{max_retries})...")
+            time.sleep(wait)
+            continue
         if resp.status_code == 429:
             wait = float(resp.headers.get("Retry-After", 0)) or (2 ** attempt) * 5
             print(f"  rate limited (429) on {label}, waiting {wait:.0f}s "
@@ -147,6 +158,11 @@ def get_with_retry(url, params, max_retries=6, label="request"):
             continue
         resp.raise_for_status()
         return resp
+    if last_error is not None:
+        raise RuntimeError(
+            f"Open-Meteo request failed for {label} after {max_retries} retries due to "
+            "repeated network timeouts/connection errors."
+        ) from last_error
     raise RuntimeError(
         f"Open-Meteo kept returning 429 for {label} after {max_retries} retries. "
         "Try a smaller chunk size, a larger pause, or wait a few minutes "
