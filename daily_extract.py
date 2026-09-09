@@ -512,7 +512,36 @@ def write_outputs(coords, preds, target_date, outdir, features=None):
 
     return csv_key, gj_key, png_key
 
+def get_with_retry(url, params, max_retries=6, label="request"):
+    """GET with exponential backoff on HTTP 429 and transient network errors."""
+    last_error = None
+    for attempt in range(max_retries):
+        try:
+            resp = requests.get(url, params=params, timeout=60)
+        except (requests.exceptions.Timeout,
+                requests.exceptions.ConnectionError) as e:
+            last_error = e
+            wait = (2 ** attempt) * 5
+            print(f"  network error on {label} ({type(e).__name__}), "
+                  f"waiting {wait:.0f}s (attempt {attempt + 1}/{max_retries})...")
+            time.sleep(wait)
+            continue
 
+        if resp.status_code == 429:
+            wait = float(resp.headers.get("Retry-After", 0)) or (2 ** attempt) * 5
+            print(f"  rate limited (429) on {label}, waiting {wait:.0f}s "
+                  f"(attempt {attempt + 1}/{max_retries})...")
+            time.sleep(wait)
+            continue
+
+        resp.raise_for_status()
+        return resp
+
+    raise RuntimeError(
+        f"Open-Meteo failed for {label} after {max_retries} retries. "
+        f"Last error: {last_error or 'HTTP 429'}. "
+        "Try a smaller chunk size, a larger pause, or rerun later."
+    )
 # --------------------------------------------------------------------------- #
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Latest BC wildfire-risk prediction")
